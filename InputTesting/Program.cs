@@ -34,7 +34,7 @@ namespace InputTesting
 
             using (SqlConnection connection = new SqlConnection(connectionString))
             {
-                //connection.Open();
+                connection.Open();
                 int lastInput, cardVersionID;
                 var checkCard = "SELECT ID FROM Card_Main WHERE Name = @Name";
                 var sqlMain = "INSERT INTO Card_Main Values(@Name, @CMC, @Layout, @Mana_Cost, @Oracle_Text, @Power, @Toughness, @Reserved, @Oracle_ID); SELECT CAST(scope_identity() AS int)";
