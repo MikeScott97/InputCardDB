@@ -28,7 +28,7 @@ namespace InputTesting
 
         public static async Task GetCard()
         {
-            string data = await File.ReadAllTextAsync("C:\\Users\\temp\\Downloads\\test.json");
+            string data = await File.ReadAllTextAsync("C:\\Users\\n3v3r\\Downloads\\default-cards-20220812210621.json");
             List<CardDataStore> carddata = JsonConvert.DeserializeObject<List<CardDataStore>>(data);
 
             using (SqlConnection connection = new SqlConnection(connectionString))
@@ -177,6 +177,11 @@ namespace InputTesting
                 SqlCommand insertColourLookup = new SqlCommand(insertColour, connection);
                 SqlCommand insertIdentityLookup = new SqlCommand(insertIdentity, connection);
 
+                if(colours == null)
+                {
+                    colours = new char[] { 'C' };
+                }
+
                 foreach (char colour in colours)
                 {
                     connection.Open();
@@ -185,29 +190,20 @@ namespace InputTesting
                     {
                         insertColourLookup.Parameters.AddWithValue("@cardID", cardID);
                         insertColourLookup.Parameters.AddWithValue("@colourID", check.ExecuteScalar());
-                        try
-                        {
-                            insertColourLookup.ExecuteNonQuery();
-                        }
-                        catch
-                        {
-                            Console.WriteLine("insert failed for " + cardID + colour);
-                        }
+
+                        insertColourLookup.ExecuteNonQuery();
+                        insertColourLookup.Parameters.Clear();
                     }
                     else
                     {
                         insertIdentityLookup.Parameters.AddWithValue("@cardID", cardID);
                         insertIdentityLookup.Parameters.AddWithValue("@colourID", check.ExecuteScalar());
 
-                        try
-                        {
-                            insertIdentityLookup.ExecuteNonQuery();
-                        }
-                        catch
-                        {
-                            Console.WriteLine("insert failed for " + cardID + colour);
-                        }
+                        insertIdentityLookup.ExecuteNonQuery();
+                        insertIdentityLookup.Parameters.Clear();
+
                     }
+                    check.Parameters.Clear();
                     connection.Close();
 
                 }
@@ -329,12 +325,12 @@ namespace InputTesting
                 SqlCommand insImages = new SqlCommand(insertImages, connection);
 
                 insImages.Parameters.AddWithValue("@Card_Version_ID", versionID);
-                insImages.Parameters.AddWithValue("@PNG", ImageURIs["png"]);
-                insImages.Parameters.AddWithValue("@Border_Crop", ImageURIs["border_crop"]);
-                insImages.Parameters.AddWithValue("@Art_Crop", ImageURIs["art_crop"]);
-                insImages.Parameters.AddWithValue("@Large", ImageURIs["large"]);
-                insImages.Parameters.AddWithValue("@Normal", ImageURIs["normal"]);
-                insImages.Parameters.AddWithValue("@Small", ImageURIs["small"]);
+                insImages.Parameters.AddWithValue("@PNG", ImageURIs == null ? (object)DBNull.Value : ImageURIs["png"]);
+                insImages.Parameters.AddWithValue("@Border_Crop", ImageURIs == null ? (object)DBNull.Value : ImageURIs["border_crop"]);
+                insImages.Parameters.AddWithValue("@Art_Crop", ImageURIs == null ? (object)DBNull.Value : ImageURIs["art_crop"]);
+                insImages.Parameters.AddWithValue("@Large", ImageURIs == null ? (object)DBNull.Value : ImageURIs["large"]);
+                insImages.Parameters.AddWithValue("@Normal", ImageURIs == null ? (object)DBNull.Value : ImageURIs["normal"]);
+                insImages.Parameters.AddWithValue("@Small", ImageURIs == null ? (object)DBNull.Value : ImageURIs["small"]);
                 connection.Open();
                 insImages.ExecuteNonQuery();
                 connection.Close();
@@ -427,7 +423,7 @@ namespace InputTesting
 
             //Image_URIs columns
             //dictionary of image urls in the following order: small, normal, large, png, art_crop,  border_crop
-            public Dictionary<string, string> Image_URIs { get; set; }
+            public Dictionary<string, string>? Image_URIs { get; set; }
 
             //Magic_Sets columns
             public string Set_Name { get; set; }
