@@ -28,7 +28,7 @@ namespace InputTesting
 
         public static async Task GetCard()
         {
-            string data = await File.ReadAllTextAsync("C:\\Users\\temp\\Downloads\\test.json");
+            string data = await File.ReadAllTextAsync("C:\\Users\\temp\\Downloads\\oracle-cards-20220815090206.json");
             List<CardDataStore> carddata = JsonConvert.DeserializeObject<List<CardDataStore>>(data);
 
             using (SqlConnection connection = new SqlConnection(connectionString))
@@ -40,6 +40,10 @@ namespace InputTesting
                 //inputs each json line into the DB
                 foreach (CardDataStore card in carddata)
                 {
+                    if (card.Layout.Contains("token") || card.Layout == "art_series")
+                    {
+                        continue;
+                    }
                     //sets the card_main values
                     using (SqlCommand writeCard = new SqlCommand(sqlMain, connection))
                     {
@@ -98,7 +102,7 @@ namespace InputTesting
             cardTypeArr = cardTypes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
             int index = 0, typeID;
-
+            bool subTrigger = false;
             //sql commands
             //search card types
             var checkType = "SELECT ID FROM Card_Types WHERE Name = @Name";
@@ -117,12 +121,29 @@ namespace InputTesting
                 //while loop to go through each type
                 do
                 {
+                    switch (cardTypeArr[index])
+                    {
+                        case "Summon":
+                            cardTypeArr[index] = "Creature";
+                            break;
+                        case "Interrupt":
+                            cardTypeArr[index] = "Instant";
+                            break;
+                        default:
+                            break;
+                    }
+
+
+                    if (cardTypeArr[index].Contains('/'))
+                    {
+                        break;
+                    }
+
                     //trigger subtype inserts into db instead of regular types
                     if (cardTypeArr[index].Contains('—'))
                     {
-                        card_TypesInsert.Parameters.Clear();
-                        card_TypesInsert.Parameters.AddWithValue("@Type_Version", "Subtype");
                         index++;
+                        subTrigger = true;
                     }
                     connection.Open();
                     //add the type name to the select query
@@ -140,8 +161,15 @@ namespace InputTesting
                         {
                             //if nothing is returned create the table entry
                             Console.WriteLine("New Type");
+                            if(subTrigger == true)
+                            {
+                                card_TypesInsert.Parameters.Clear();
+                                card_TypesInsert.Parameters.AddWithValue("@Type_Version", "Subtype");
+                            }
+
                             card_TypesInsert.Parameters.AddWithValue("@Name", cardTypeArr[index]);
                             typeID = (int)card_TypesInsert.ExecuteScalar();
+                            card_TypesInsert.Parameters.Clear();
                         }
                         //add the cardID and typeID to the card_type_lookup table
                         card_Type_LookupInsert.Parameters.Clear();
@@ -177,6 +205,11 @@ namespace InputTesting
                 SqlCommand insertColourLookup = new SqlCommand(insertColour, connection);
                 SqlCommand insertIdentityLookup = new SqlCommand(insertIdentity, connection);
 
+                if(colours == null)
+                {
+                    colours = new char[] { 'C' };
+                }
+
                 foreach (char colour in colours)
                 {
                     connection.Open();
@@ -185,29 +218,20 @@ namespace InputTesting
                     {
                         insertColourLookup.Parameters.AddWithValue("@cardID", cardID);
                         insertColourLookup.Parameters.AddWithValue("@colourID", check.ExecuteScalar());
-                        try
-                        {
-                            insertColourLookup.ExecuteNonQuery();
-                        }
-                        catch
-                        {
-                            Console.WriteLine("insert failed for " + cardID + colour);
-                        }
+
+                        insertColourLookup.ExecuteNonQuery();
+                        insertColourLookup.Parameters.Clear();
                     }
                     else
                     {
                         insertIdentityLookup.Parameters.AddWithValue("@cardID", cardID);
                         insertIdentityLookup.Parameters.AddWithValue("@colourID", check.ExecuteScalar());
 
-                        try
-                        {
-                            insertIdentityLookup.ExecuteNonQuery();
-                        }
-                        catch
-                        {
-                            Console.WriteLine("insert failed for " + cardID + colour);
-                        }
+                        insertIdentityLookup.ExecuteNonQuery();
+                        insertIdentityLookup.Parameters.Clear();
+
                     }
+                    check.Parameters.Clear();
                     connection.Close();
 
                 }
@@ -329,12 +353,12 @@ namespace InputTesting
                 SqlCommand insImages = new SqlCommand(insertImages, connection);
 
                 insImages.Parameters.AddWithValue("@Card_Version_ID", versionID);
-                insImages.Parameters.AddWithValue("@PNG", ImageURIs["png"]);
-                insImages.Parameters.AddWithValue("@Border_Crop", ImageURIs["border_crop"]);
-                insImages.Parameters.AddWithValue("@Art_Crop", ImageURIs["art_crop"]);
-                insImages.Parameters.AddWithValue("@Large", ImageURIs["large"]);
-                insImages.Parameters.AddWithValue("@Normal", ImageURIs["normal"]);
-                insImages.Parameters.AddWithValue("@Small", ImageURIs["small"]);
+                insImages.Parameters.AddWithValue("@PNG", ImageURIs == null ? (object)DBNull.Value : ImageURIs["png"]);
+                insImages.Parameters.AddWithValue("@Border_Crop", ImageURIs == null ? (object)DBNull.Value : ImageURIs["border_crop"]);
+                insImages.Parameters.AddWithValue("@Art_Crop", ImageURIs == null ? (object)DBNull.Value : ImageURIs["art_crop"]);
+                insImages.Parameters.AddWithValue("@Large", ImageURIs == null ? (object)DBNull.Value : ImageURIs["large"]);
+                insImages.Parameters.AddWithValue("@Normal", ImageURIs == null ? (object)DBNull.Value : ImageURIs["normal"]);
+                insImages.Parameters.AddWithValue("@Small", ImageURIs == null ? (object)DBNull.Value : ImageURIs["small"]);
                 connection.Open();
                 insImages.ExecuteNonQuery();
                 connection.Close();
@@ -427,7 +451,7 @@ namespace InputTesting
 
             //Image_URIs columns
             //dictionary of image urls in the following order: small, normal, large, png, art_crop,  border_crop
-            public Dictionary<string, string> Image_URIs { get; set; }
+            public Dictionary<string, string>? Image_URIs { get; set; }
 
             //Magic_Sets columns
             public string Set_Name { get; set; }
