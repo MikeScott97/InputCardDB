@@ -123,8 +123,11 @@ namespace InputTesting
                 {
                     switch (cardTypeArr[index])
                     {
+                        //used to change legacy summon card to typeline "creature — subtype"
                         case "Summon":
                             cardTypeArr[index] = "Creature";
+                            cardTypeArr.Append(cardTypeArr[index + 1]);
+                            cardTypeArr[index + 1] = "—";
                             break;
                         case "Interrupt":
                             cardTypeArr[index] = "Instant";
