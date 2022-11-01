@@ -28,7 +28,7 @@ namespace InputTesting
 
         public static async Task GetCard()
         {
-            string data = await File.ReadAllTextAsync("C:\\Users\\temp\\Downloads\\oracle-cards-20220815090206.json");
+            string data = await File.ReadAllTextAsync("C:\\Users\\temp\\Downloads\\default-cards-20221030090532.json");
             List<CardDataStore> carddata = JsonConvert.DeserializeObject<List<CardDataStore>>(data);
 
             using (SqlConnection connection = new SqlConnection(connectionString))
@@ -40,10 +40,33 @@ namespace InputTesting
                 //inputs each json line into the DB
                 foreach (CardDataStore card in carddata)
                 {
-                    if (card.Layout.Contains("token") || card.Layout == "art_series")
+                    switch(card.Layout)
                     {
-                        continue;
+                        case "token":
+                        case "art_series":
+                        case "emblem":
+                            continue;
+                        case "transform":
+                        case "modal_dfc":
+                            card.Mana_Cost = card.Card_Faces[0].Mana_Cost;
+                            card.Oracle_Text = card.Card_Faces[0].Oracle_Text;
+                            card.Power = card.Card_Faces[0].Power;
+                            card.Toughness = card.Card_Faces[0].Toughness;
+                            card.Flavor_Name = card.Card_Faces[0].Flavor_Name;
+                            card.Flavor_Text = card.Card_Faces[0].Flavor_Text;
+                            break;
+                        case "reversible_card":
+                            card.Mana_Cost = card.Card_Faces[0].Mana_Cost;
+                            card.Oracle_Text = card.Card_Faces[0].Oracle_Text;
+                            card.Power = card.Card_Faces[0].Power;
+                            card.Toughness = card.Card_Faces[0].Toughness;
+                            card.Flavor_Name = card.Card_Faces[0].Flavor_Name;
+                            card.Flavor_Text = card.Card_Faces[0].Flavor_Text;
+                            card.type_line = card.Card_Faces[0].type_line;
+                            break;
                     }
+
+
                     //sets the card_main values
                     using (SqlCommand writeCard = new SqlCommand(sqlMain, connection))
                     {
@@ -64,9 +87,22 @@ namespace InputTesting
                             //try to input into database
                             lastInput = (int)writeCard.ExecuteScalar();
                             Console.WriteLine("main input successful");
+
                             InsertTypes(card.type_line, lastInput);
                             Console.WriteLine("type input successful");
-                            InsertColours(card.colors, lastInput, false);
+
+                            switch(card.Layout)
+                            {
+                                case "transform":
+                                case "modal_dfc":
+                                case "reversible_card":
+                                InsertColours(card.Card_Faces[0].colors, lastInput, false);
+                                    break;
+                                default:
+                                InsertColours(card.colors, lastInput, false);
+                                    break;
+                            }
+
                             Console.WriteLine("colour input successful");
                             InsertColours(card.color_identity, lastInput, true);
                             Console.WriteLine("identity input successful");
@@ -82,14 +118,10 @@ namespace InputTesting
                             lastInput = (int)check.ExecuteScalar();
                         }
                         cardVersionID = await InsertVersion(card, lastInput);
-                        InsertImages(cardVersionID, card.Image_URIs);
-                        InsertPrices(cardVersionID, card.prices);
-                        InsertServiceIDs(cardVersionID, card);
-
                         connection.Close();
                     }
-
                     Console.WriteLine(card.Name + "Complete");
+
                 }
             }
         }
@@ -97,10 +129,10 @@ namespace InputTesting
         public static async void InsertTypes(string cardTypes, int cardID)
         {
 
-            //put each card type into an array
-            string[] cardTypeArr;
-            cardTypeArr = cardTypes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
+            //put each card type into a list
+            List<string> cardTypeArr = new List<string>();
+            cardTypeArr = cardTypes.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+            
             int index = 0, typeID;
             bool subTrigger = false;
             //sql commands
@@ -126,8 +158,9 @@ namespace InputTesting
                         //used to change legacy summon card to typeline "creature — subtype"
                         case "Summon":
                             cardTypeArr[index] = "Creature";
-                            cardTypeArr.Append(cardTypeArr[index + 1]);
+                            cardTypeArr.Add(cardTypeArr[index+1]);
                             cardTypeArr[index + 1] = "—";
+
                             break;
                         case "Interrupt":
                             cardTypeArr[index] = "Instant";
@@ -140,6 +173,7 @@ namespace InputTesting
                     if (cardTypeArr[index].Contains('/'))
                     {
                         break;
+
                     }
 
                     //trigger subtype inserts into db instead of regular types
@@ -192,7 +226,7 @@ namespace InputTesting
 
                     index++;
 
-                } while (index < cardTypeArr.Length);
+                } while (index < cardTypeArr.Count-1);
             }
         }
 
@@ -208,7 +242,7 @@ namespace InputTesting
                 SqlCommand insertColourLookup = new SqlCommand(insertColour, connection);
                 SqlCommand insertIdentityLookup = new SqlCommand(insertIdentity, connection);
 
-                if(colours == null)
+                if(colours == null || colours.Length == 0)
                 {
                     colours = new char[] { 'C' };
                 }
@@ -279,17 +313,19 @@ namespace InputTesting
         {
             var insertVersion = "INSERT INTO Card_Version Values(@Artist, @Border_Colour, @Collector_Number, @Flavour_Name, @Flavour_Text, @HighRes_Image, @Image_Status, @Main_ID, @Set_ID); SELECT CAST(scope_identity() AS int)";
             var checkSet = "SELECT ID FROM Magic_Set WHERE Code = @SetCode";
-            int setID;
+            var checkVersion = "SELECT ID FROM Card_Version WHERE Collector_Number = @Collector_Number AND Set_ID = @Set_ID AND Main_ID = @Main_ID";
+            int setID, versionID;
 
             using (SqlConnection connection = new SqlConnection(connectionString))
             {
                 SqlCommand selectSet = new SqlCommand(checkSet, connection);
                 SqlCommand insVersion = new SqlCommand(insertVersion, connection);
+                SqlCommand chkVersion = new SqlCommand(checkVersion, connection);
 
                 selectSet.Parameters.AddWithValue("@SetCode", CardData.Set);
-                connection.Open();
                 try
                 {
+                    connection.Open();
                     setID = (int)selectSet.ExecuteScalar();
                 }
                 catch
@@ -297,6 +333,7 @@ namespace InputTesting
                     setID = await InsertSet(CardData.Set);
                 }
                 connection.Close();
+
 
                 insVersion.Parameters.AddWithValue("@Artist", CardData.Artist ?? (object)DBNull.Value);
                 insVersion.Parameters.AddWithValue("@Border_Colour", CardData.Border_Color);
@@ -307,12 +344,41 @@ namespace InputTesting
                 insVersion.Parameters.AddWithValue("@Image_Status", CardData.Image_Status);
                 insVersion.Parameters.AddWithValue("@Main_ID", cardID);
                 insVersion.Parameters.AddWithValue("@Set_ID", setID);
+                try
+                {
+                    connection.Open();
+                    versionID = (int)insVersion.ExecuteScalar();
+                    connection.Close();
+                    switch(CardData.Image_URIs == null)
+                    {
+                        case true:
+                            InsertImages(versionID, CardData.Card_Faces[0].Image_URIs, 1);
+                            InsertImages(versionID, CardData.Card_Faces[1].Image_URIs, 2);
+                            break;
 
-                connection.Open();
-                int versionID = (int)insVersion.ExecuteScalar();
-                connection.Close();
-                Console.WriteLine("Version input successful");
-                return versionID;
+                        default:
+                            InsertImages(versionID, CardData.Image_URIs, 0);
+                            break;
+                    }
+
+                    InsertPrices(versionID, CardData.prices);
+                    InsertServiceIDs(versionID, CardData);
+                    Console.WriteLine("Version input successful");
+                    
+                }
+                catch
+                {
+                    connection.Close();
+                    chkVersion.Parameters.AddWithValue("@Collector_Number", CardData.Collector_Number);
+                    chkVersion.Parameters.AddWithValue("@Main_ID", cardID);
+                    chkVersion.Parameters.AddWithValue("@Set_ID", setID);
+                    connection.Open();
+                    versionID = (int)chkVersion.ExecuteScalar();
+                    connection.Close();
+                    Console.WriteLine("Version already exists");
+                }
+
+                return versionID;   
 
             }
         }
@@ -348,9 +414,11 @@ namespace InputTesting
 
             }
         }
-        public static async void InsertImages(int versionID, Dictionary<string, string> ImageURIs)
+        public static async void InsertImages(int versionID, Dictionary<string, string> ImageURIs, int faceID)
         {
-            var insertImages = "INSERT INTO Image_URIs VALUES(@Card_Version_ID, @PNG, @Border_Crop, @Art_Crop, @Large, @Normal, @Small)";
+            
+            var insertImages = "INSERT INTO Image_URIs VALUES(@Card_Version_ID, @PNG, @Border_Crop, @Art_Crop, @Large, @Normal, @Small, @Card_Face)";
+
             using (SqlConnection connection = new SqlConnection(connectionString))
             {
                 SqlCommand insImages = new SqlCommand(insertImages, connection);
@@ -362,6 +430,7 @@ namespace InputTesting
                 insImages.Parameters.AddWithValue("@Large", ImageURIs == null ? (object)DBNull.Value : ImageURIs["large"]);
                 insImages.Parameters.AddWithValue("@Normal", ImageURIs == null ? (object)DBNull.Value : ImageURIs["normal"]);
                 insImages.Parameters.AddWithValue("@Small", ImageURIs == null ? (object)DBNull.Value : ImageURIs["small"]);
+                insImages.Parameters.AddWithValue("@Card_Face", faceID);
                 connection.Open();
                 insImages.ExecuteNonQuery();
                 connection.Close();
@@ -436,7 +505,6 @@ namespace InputTesting
             public float CMC { get; set; }
             public string Layout { get; set; }
             public bool Reserved { get; set; }
-
             public string? Mana_Cost { get; set; }
             public string? Oracle_Text { get; set; }
             public string? Power { get; set; }
@@ -451,6 +519,9 @@ namespace InputTesting
             public string? Flavor_Text { get; set; }
             public bool Highres_Image { get; set; }
             public string Image_Status { get; set; }
+
+            //card version of transform cards
+            public IList<CardFaceDataStore>? Card_Faces { get; set; }
 
             //Image_URIs columns
             //dictionary of image urls in the following order: small, normal, large, png, art_crop,  border_crop
@@ -502,6 +573,22 @@ namespace InputTesting
             public int? tcgplayer_id { get; set; }
             public int card_count { get; set; }
             public string name { get; set; }
+
+        }
+
+        //object for cardfaces
+        public class CardFaceDataStore
+        {
+            public string Name { get; set; }
+            public string Mana_Cost { get; set; }
+            public char[]? colors { get; set; }
+            public string? Oracle_Text { get; set; }
+            public string? Power { get; set; }
+            public string? Toughness { get; set; }
+            public Dictionary<string, string>? Image_URIs { get; set; }
+            public string? Flavor_Name { get; set; }
+            public string? Flavor_Text { get; set; }
+            public string type_line { get; set; }
 
         }
 
